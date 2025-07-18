@@ -136,14 +136,15 @@ public class MarchingCubes : MonoBehaviour
                         Vector3Int corner = new Vector3Int(x, y, z) + MarchingTable.Corners[i];//定位每个小立方体的8个顶点在标量场中的绝对位置（这是一个三维int向量：Vector3Int）
                         cubeCorners[i] = heights[corner.x, corner.y, corner.z];//根据小立方体的8个顶点的绝对位置的xyz坐标得到对应的柏林噪声的数值（因为corner的xyz三个分量和heights的三个分量都是分别由width，height，width来决定的，所以可以准确定位到）
                     }
-                    MarchCube(new Vector3(x, y, z), cubeCorners);//在第三层的单次循环中，cubeCorners储存了单个march cube中的8个顶点的噪声值。向MarchCube中传入单个立方体的位置和8个顶点的噪声数据数组
+                    MarchCube(new Vector3Int(x, y, z), cubeCorners);//在第三层的单次循环中，cubeCorners储存了单个march cube中的8个顶点的噪声值。向MarchCube中传入单个立方体的位置和8个顶点的噪声数据数组
                 }
             }
         }
     }
 
+    [SerializeField] private bool isUseSmoothness = false;
     //单个行进立方体构造器
-    private void MarchCube (Vector3 position, float[] cubeCorners)
+    private void MarchCube (Vector3Int position, float[] cubeCorners)
     {
         int configIndex = GetConfigIndex(cubeCorners);//将单个立方体的顶点噪声数据传入GetConfigIndex函数中，与heightThreshold比较 来生成配置索引，这是一个8位的数值，对应立方体的八个顶点。表示单个立方体的8个顶点是否在需要构建的形状的内部（如在形状外还是形状内）
 
@@ -164,11 +165,19 @@ public class MarchingCubes : MonoBehaviour
                     return;
                 }
 
-                Vector3 edgeStart = position + MarchingTable.Edges[triTableValue, 0];//获取边表的第一个顶点
-                Vector3 edgeEnd = position + MarchingTable.Edges[triTableValue, 1];//获取边表的第二个顶点
-
+                Vector3Int edgeStart = position + MarchingTable.Edges[triTableValue, 0];//获取边表的第一个顶点
+                Vector3Int edgeEnd = position + MarchingTable.Edges[triTableValue, 1];//获取边表的第二个顶点
+                
                 Vector3 vertex = (edgeStart + edgeEnd) / 2;//取中点
 
+                
+                if (isUseSmoothness)
+                {
+                    float edgeStartValue = heights[edgeStart.x, edgeStart.y, edgeStart.z];
+                    float edgeEndValue = heights[edgeEnd.x, edgeEnd.y, edgeEnd.z];
+                    vertex = InterpolateEdgePosition(heightThreshold, edgeStart,edgeStartValue, edgeEnd,edgeEndValue);
+                }
+                
                 vertices.Add(vertex);
                 triangles.Add(vertices.Count - 1);
 
@@ -176,10 +185,24 @@ public class MarchingCubes : MonoBehaviour
             }
         }
     }
+    private Vector3 InterpolateEdgePosition(float threshold, Vector3 vertex1, float value1, Vector3 vertex2, float value2)
+    {
+        Vector3 pointOnEdge = Vector3.zero;
+        if (Mathf.Approximately(threshold - value1, 0) == true)
+            return vertex1;
+        if (Mathf.Approximately(threshold - value2, 0) == true)
+            return vertex1;
+        if (Mathf.Approximately(value1 - value2, 0) == true) return vertex1;
+
+        float mu = (threshold - value1) / (value2 - value1);
+        pointOnEdge.x = vertex1.x + mu * (vertex2.x - vertex1.x);
+        pointOnEdge.y = vertex1.y + mu * (vertex2.y - vertex1.y);
+        pointOnEdge.z = vertex1.z + mu * (vertex2.z - vertex1.z);
+        return pointOnEdge;
+    }
     private int GetConfigIndex (float[] cubeCorners)
     {
         int configIndex = 0;
-
         for (int i = 0; i < 8; i++)//循环遍历立方体的8个顶点
         {
             /*
