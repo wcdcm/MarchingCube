@@ -6,7 +6,7 @@ using UnityEngine;
 public class MarchingCubes : MonoBehaviour
 {
     [SerializeField] private int width = 30;
-    [SerializeField] private int height = 10;
+    [SerializeField] private int height = 30;
 
     float resolution = 0.1f;
     [SerializeField] float noiseScale = 0.1f;
@@ -101,17 +101,12 @@ public class MarchingCubes : MonoBehaviour
         }
     }
 
-    private float PerlinNoise3D (float x, float y, float z)
+    private float PerlinNoise3D(float x, float y, float z)
     {
-        float xy = Mathf.PerlinNoise(x, y);
-        float xz = Mathf.PerlinNoise(x, z);
-        float yz = Mathf.PerlinNoise(y, z);
-
-        float yx = Mathf.PerlinNoise(y, x);
-        float zx = Mathf.PerlinNoise(z, x);
-        float zy = Mathf.PerlinNoise(z, y);
-
-        return (xy + xz + yz + yx + zx + zy) / 6;
+        // 改进：增加Y方向的权重，让Y变化对噪声的影响更连续
+        float xyz = Mathf.PerlinNoise(x + y, z + y); // 将Y融入X/Z维度，增强Y相关性
+        float yxz = Mathf.PerlinNoise(y + x, z + x);
+        return (xyz + yxz) / 2; // 减少2D组合数量，增强核心方向连续性
     }
 
     
@@ -191,7 +186,7 @@ public class MarchingCubes : MonoBehaviour
         if (Mathf.Approximately(threshold - value1, 0) == true)
             return vertex1;
         if (Mathf.Approximately(threshold - value2, 0) == true)
-            return vertex1;
+            return vertex2;
         if (Mathf.Approximately(value1 - value2, 0) == true) return vertex1;
 
         float mu = (threshold - value1) / (value2 - value1);
