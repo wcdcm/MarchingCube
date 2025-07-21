@@ -21,10 +21,13 @@ public class MarchingCubes : MonoBehaviour
     private List<int> triangles = new List<int>();
 
     private MeshFilter meshFilter;
+    
+    private Dictionary <long,int> vertexCache;
 
     void Start()
     {
         meshFilter = GetComponent<MeshFilter>();
+        vertexCache = new Dictionary<long,int>();
         StartCoroutine(TestAll());
     }
 
@@ -47,22 +50,62 @@ public class MarchingCubes : MonoBehaviour
     /// <summary>
     /// 把计算好的顶点和三角形数据配置到 Unity 的 Mesh 对象里，进而生成可渲染的网格模型
     /// </summary>
+    // 修改SetMesh方法：手动计算平滑法线
     private void SetMesh()
     {
         Mesh mesh = new Mesh();
-
-        // 把存储顶点的List转换为数组，再赋值给Mesh的vertices属性。vertices列表中的每个元素都是一个Vector3类型的点，代表网格的一个顶点
         mesh.vertices = vertices.ToArray();
-        
-        //把存储三角形的List转换为数组，然后赋给Mesh的triangles属性
-        // triangles列表中的元素是整型，每三个整数为一组，对应vertices数组中的索引
-        // 这三个索引确定了一个三角形的三个顶点，并且按照逆时针方向定义，以保证法线方向正确
         mesh.triangles = triangles.ToArray();
         
-        mesh.RecalculateNormals();
-
+        // 清除缓存，为下一次生成做准备
+        vertexCache.Clear();
+        
+        // 使用梯度计算平滑法线（替代RecalculateNormals）
+        mesh.normals = CalculateSmoothNormals(mesh.vertices, mesh.triangles);
+        
         meshFilter.mesh = mesh;
     }
+
+    // 新增：计算平滑法线的方法
+    private Vector3[] CalculateSmoothNormals(Vector3[] vertice, int[] triangle)
+    {
+        Vector3[] normals = new Vector3[vertice.Length];
+        
+        // 初始化所有法线为零向量
+        for (int i = 0; i < normals.Length; i++)
+        {
+            normals[i] = Vector3.zero;
+        }
+        
+        // 累加每个三角形的面法线到其顶点
+        for (int i = 0; i < triangle.Length; i += 3)
+        {
+            int i1 = triangle[i];
+            int i2 = triangle[i + 1];
+            int i3 = triangle[i + 2];
+            
+            Vector3 v1 = vertice[i1];
+            Vector3 v2 = vertice[i2];
+            Vector3 v3 = vertice[i3];
+            
+            // 计算三角形的面法线
+            Vector3 normal = Vector3.Cross(v2 - v1, v3 - v1).normalized;
+            
+            // 累加面法线到每个顶点
+            normals[i1] += normal;
+            normals[i2] += normal;
+            normals[i3] += normal;
+        }
+        
+        // 归一化所有顶点法线
+        for (int i = 0; i < normals.Length; i++)
+        {
+            normals[i].Normalize();
+        }
+        
+        return normals;
+    }
+
 
     private void SetHeights()
     {
@@ -172,13 +215,45 @@ public class MarchingCubes : MonoBehaviour
                     float edgeEndValue = heights[edgeEnd.x, edgeEnd.y, edgeEnd.z];
                     vertex = InterpolateEdgePosition(heightThreshold, edgeStart,edgeStartValue, edgeEnd,edgeEndValue);
                 }
+
+                // 使用顶点缓存，避免重复顶点
+                int vertexIndex = GetVertexIndex(vertex);
                 
-                vertices.Add(vertex);
-                triangles.Add(vertices.Count - 1);
+                //vertices.Add(vertexIndex);
+                triangles.Add(vertexIndex);
 
                 edgeIndex++;
             }
         }
+    }
+
+    private int GetVertexIndex(Vector3 vertex)
+    {
+        // 创建一个唯一键（使用定点数避免浮点数精度问题）
+        long key = GetVertexKey(vertex);
+        
+        // 检查缓存中是否已存在该顶点
+        if (vertexCache.TryGetValue(key, out int index))
+        {
+            return index;
+        }
+        
+        // 如果不存在，添加到列表和缓存
+        index = vertices.Count;
+        vertices.Add(vertex);
+        vertexCache[key] = index;
+        return index;
+    }
+    // 新增：为顶点生成唯一键
+    private long GetVertexKey(Vector3 vertex)
+    {
+        // 将浮点数转换为定点数（乘以1000并取整），减少精度问题
+        int x = Mathf.RoundToInt(vertex.x * 1000);
+        int y = Mathf.RoundToInt(vertex.y * 1000);
+        int z = Mathf.RoundToInt(vertex.z * 1000);
+        
+        // 使用位运算组合三个整数为一个唯一的long值
+        return (long)x << 40 | (long)y << 20 | z;
     }
     private Vector3 InterpolateEdgePosition(float threshold, Vector3 vertex1, float value1, Vector3 vertex2, float value2)
     {
