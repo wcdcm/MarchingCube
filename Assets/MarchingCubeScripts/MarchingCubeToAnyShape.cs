@@ -2,154 +2,205 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 public class MarchingCubeToAnyShape : MonoBehaviour
 {
-    [SerializeField] private int width = 30;
-    [SerializeField] private int height = 20;
+     [SerializeField] private int width = 30;
+    [SerializeField] private int height = 30;
+
+    //float resolution = 0.1f;
+    [SerializeField] float noiseScale = 0.1f;
 
     [SerializeField] [Range(0,1f)]private float heightThreshold = 0.5f;
 
     [SerializeField] bool visualizeNoise;
     [SerializeField] bool use3DNoise;
 
+    // 新增：笔刷参数
+    [Header("笔刷设置")]
+    [SerializeField] private float brushRadius = 2f; // 笔刷半径（世界单位）
+    [SerializeField] private float brushStrength = 0.4f; // 笔刷强度（正值凸起，负值凹陷）
+    [SerializeField] private KeyCode brushKey = KeyCode.Mouse0; // 激活键（鼠标左键）
+    [SerializeField] private LayerMask terrainLayer; // 地形检测层
+
+    // 新增：记录笔刷点击位置（世界坐标）
+    [SerializeField] private Vector3? brushWorldPos;
+    private Vector3 brushGridPos;
+
     private float[,,] heights;
     private List<Vector3> vertices = new List<Vector3>();
     private List<int> triangles = new List<int>();
-    private List<Vector3> normals = new List<Vector3>();
-    private List<Vector2> uvs = new List<Vector2>();
 
     private MeshFilter meshFilter;
-    private MeshRenderer meshRenderer;
+    private Dictionary<long, int> vertexCache;
+
     private MeshCollider meshCollider;
+    private Mesh mesh;
 
-    // 球体基础参数
-    [SerializeField] float sphereRadius = 10f;
-    private Vector3 sphereCenter;
-
-    // 延伸相关参数（新增/修改）
-    [SerializeField] float extendPower = 0.4f; // 延伸强度
-    [SerializeField] float extendRange = 3f; // 基础影响范围
-    [SerializeField] float directionFactor = 1.5f; // 沿摄像机方向的延伸系数（越大越偏向方向延伸）
-    private List<(Vector3 hitPoint, Vector3 camDirection)> extendData = new List<(Vector3, Vector3)>(); // 存储点击点和摄像机方向
-
-
+    // [Header("Test:")] 
+    // public GameObject sphere;
+    // public Vector3 instancePos;
     void Start()
     {
-        sphereCenter = new Vector3(width/2f, height/2f, width/2f);
         meshFilter = GetComponent<MeshFilter>();
-        meshRenderer = GetComponent<MeshRenderer>();
         meshCollider = GetComponent<MeshCollider>();
-        if (meshCollider == null) meshCollider = gameObject.AddComponent<MeshCollider>();
-
-        if (meshRenderer != null && meshRenderer.material == null)
-        {
-            meshRenderer.material = new Material(Shader.Find("Standard"));
-        }
-
-        UpdateMesh();
+        vertexCache = new Dictionary<long, int>();
+        StartCoroutine(TestAll());
     }
-
 
     void Update()
     {
-        // 鼠标左键点击时触发延伸
-        if (Input.GetMouseButtonDown(0))
+        // 检测鼠标点击并记录笔刷位置（仅在点击地形时生效）
+        if (Input.GetKeyDown(brushKey))
         {
-            // 核心修改1：从摄像机中心点（屏幕中心）发射射线
-            Ray centerRay = Camera.main.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0)); // 视口中心(0.5,0.5)对应屏幕中心
-            
-            // 检测射线是否击中网格
-            if (meshCollider.Raycast(centerRay, out RaycastHit hit, 1000f))
+            print("hit!");
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, terrainLayer))
             {
-                Vector3 surfaceNormal = hit.normal;
-                // 记录点击点和摄像机方向（用于后续沿该方向延伸）
-                extendData.Add((hit.point, surfaceNormal));
-                UpdateMesh(); // 立即更新网格
+                brushWorldPos = hit.point; // 记录点击的世界位置
             }
         }
     }
 
-
-    private void UpdateMesh()
+    private IEnumerator TestAll()
     {
-        SetHeights(); 
-        MarchCubes(); 
-        SetMesh();    
+        while (true)
+        {
+            SetHeights();
+            MarchCubes();
+            SetMesh();
+            yield return new WaitForSeconds(0.1f); // 缩短更新间隔，笔刷反馈更及时
+        }
     }
-
 
     private void SetMesh()
     {
-        Mesh mesh = new Mesh();
+        mesh = new Mesh();
         mesh.vertices = vertices.ToArray();
         mesh.triangles = triangles.ToArray();
-        mesh.normals = normals.ToArray();
-        mesh.uv = uvs.ToArray();
-        mesh.RecalculateBounds();
+        vertexCache.Clear();
+        mesh.normals = CalculateSmoothNormals(mesh.vertices, mesh.triangles);
+        meshCollider.sharedMesh = mesh;
         meshFilter.mesh = mesh;
-        meshCollider.sharedMesh = mesh; // 更新碰撞体
+    }
+
+    private Vector3[] CalculateSmoothNormals(Vector3[] vertice, int[] triangle)
+    {
+        Vector3[] normals = new Vector3[vertice.Length];
+        for (int i = 0; i < normals.Length; i++) normals[i] = Vector3.zero;
+        
+        for (int i = 0; i < triangle.Length; i += 3)
+        {
+            int i1 = triangle[i];
+            int i2 = triangle[i + 1];
+            int i3 = triangle[i + 2];
+            Vector3 v1 = vertice[i1];
+            Vector3 v2 = vertice[i2];
+            Vector3 v3 = vertice[i3];
+            Vector3 normal = Vector3.Cross(v2 - v1, v3 - v1).normalized;
+            normals[i1] += normal;
+            normals[i2] += normal;
+            normals[i3] += normal;
+        }
+        
+        for (int i = 0; i < normals.Length; i++) normals[i].Normalize();
+        return normals;
     }
 
 
-    // 核心修改2：调整密度场计算，让凸起沿摄像机方向延伸
     private void SetHeights()
     {
         heights = new float[width + 1, height + 1, width + 1];
 
+        // 计算笔刷影响范围（网格坐标，避免每帧重复计算）
+        int brushGridRadius = 0;
+        brushGridPos = Vector3.zero;
+        bool hasBrush = false;
+
+        if (brushWorldPos.HasValue)
+        {
+            // 世界坐标转网格坐标（x/z对应width，y对应height）
+            brushGridPos = new Vector3(
+                brushWorldPos.Value.x,
+                brushWorldPos.Value.y,
+                brushWorldPos.Value.z
+            );
+            
+            brushGridRadius = Mathf.CeilToInt(brushRadius); // 网格半径
+            hasBrush = true;
+        }
+
+        // 生成原始噪声标量场
         for (int x = 0; x < width + 1; x++)
         {
             for (int y = 0; y < height + 1; y++)
             {
                 for (int z = 0; z < width + 1; z++)
                 {
-                    Vector3 point = new Vector3(x, y, z);
+                    // 原始噪声计算（保持不变）
+                    float originalValue;
                     
-                    // 基础球体密度（保持不变）
-                    float distanceToCenter = Vector3.Distance(point, sphereCenter);
-                    float sphereDensity = 1.0f - (distanceToCenter / sphereRadius);
-
-                    // 延伸效果计算（核心修改）
-                    float extendInfluence = 0;
-                    foreach (var data in extendData)
+                    
+                    if (use3DNoise)
                     {
-                        Vector3 hitPoint = data.hitPoint;
-                        Vector3 camDir = data.camDirection; // 摄像机方向（延伸方向）
-
-                        // 计算点到点击点的基础距离
-                        float distanceToHit = Vector3.Distance(point, hitPoint);
-
-                        // 核心逻辑：让延伸沿摄像机方向增强
-                        // 计算点在摄像机方向上的投影（沿延伸方向的偏移）
-                        Vector3 pointToHit = point - hitPoint;
-                        float dotProduct = Vector3.Dot(pointToHit.normalized, camDir); // 点与延伸方向的夹角（-1~1）
-                        
-                        // 沿摄像机方向（dotProduct正方向）的点获得更强影响，反方向减弱
-                        float directionWeight = Mathf.Lerp(0.2f, 1.5f, (dotProduct + 1) / 2); // 方向权重（0.2~1.5）
-
-                        // 综合计算影响范围：基础范围 + 方向延伸
-                        float effectiveRange = extendRange + (directionFactor * dotProduct); // 沿方向增加有效范围
-                        if (distanceToHit < effectiveRange)
-                        {
-                            // 高斯衰减 + 方向权重：沿摄像机方向的凸起更明显、范围更远
-                            float gaussian = Mathf.Exp(-(distanceToHit * distanceToHit) / (2 * 0.8f));
-                            extendInfluence += extendPower * gaussian * directionWeight;
-                        }
+                        originalValue = PerlinNoise3D(
+                            (float)x / width * noiseScale, 
+                            (float)y / height * noiseScale, 
+                            (float)z / width * noiseScale);
+                    }
+                    else
+                    {
+                        float currentHeight = height * Mathf.PerlinNoise(x * noiseScale, z * noiseScale);
+                        if (y <= currentHeight - 0.5f) originalValue = 0f;
+                        else if (y > currentHeight + 0.5f) originalValue = 1f;
+                        else if (y > currentHeight) originalValue = y - currentHeight;
+                        else originalValue = currentHeight - y;
                     }
 
-                    // 最终密度 = 球体密度 + 延伸影响
-                    heights[x, y, z] = Mathf.Clamp01(sphereDensity + extendInfluence);
+                    // 笔刷修改：仅在有点击且在影响范围内时生效
+                    if (hasBrush)
+                    {
+                         // 计算当前网格点到笔刷中心的网格距离
+                         float dx = x - brushGridPos.x;
+                         float dy = y - brushGridPos.y;
+                         float dz = z - brushGridPos.z;
+                         float gridDistance = Mathf.Sqrt(dx * dx + dy * dy + dz * dz);
+                        
+                         // 在笔刷范围内才修改
+                         if (gridDistance <= brushGridRadius)
+                         {
+                             // 平滑衰减（核心：避免硬边，用二次曲线+平滑过渡）
+                             float normalizedDist = gridDistance / brushGridRadius;
+                             float influence = 1 - normalizedDist * normalizedDist; // 二次衰减
+                             influence = Mathf.SmoothStep(0, 1, influence); // 边缘更平滑
+                        
+                             // 应用笔刷（基于原始噪声叠加）
+                             originalValue += brushStrength * influence;
+                             
+                             // 限制值在0-1之间（避免超出标量场合理范围）
+                             originalValue = Mathf.Clamp01(originalValue);
+                         }
+                    }
+
+                    // 最终标量值（原始噪声+笔刷修改）
+                    heights[x, y, z] = originalValue;
                 }
             }
         }
     }
 
+    private float PerlinNoise3D(float x, float y, float z)
+    {
+        float xyz = Mathf.PerlinNoise(x + y, z + y);
+        float yxz = Mathf.PerlinNoise(y + x, z + x);
+        return (xyz + yxz) / 2;
+    }
 
+    // 以下方法保持不变
     private void MarchCubes()
     {
         vertices.Clear();
         triangles.Clear();
-        normals.Clear();
-        uvs.Clear();
 
         for (int x = 0; x < width; x++)
         {
@@ -163,65 +214,75 @@ public class MarchingCubeToAnyShape : MonoBehaviour
                         Vector3Int corner = new Vector3Int(x, y, z) + MarchingTable.Corners[i];
                         cubeCorners[i] = heights[corner.x, corner.y, corner.z];
                     }
-                    MarchCube(new Vector3(x, y, z), cubeCorners);
+                    MarchCube(new Vector3Int(x, y, z), cubeCorners);
                 }
             }
         }
     }
 
-
-    private void MarchCube(Vector3 position, float[] cubeCorners)
+    [SerializeField] private bool isUseSmoothness = false;
+    private void MarchCube(Vector3Int position, float[] cubeCorners)
     {
         int configIndex = GetConfigIndex(cubeCorners);
-        if (configIndex == 0 || configIndex == 255)
-            return;
+        if (configIndex == 0 || configIndex == 255) return;
 
-        Vector3[] edgeVertices = new Vector3[12];
-        bool[] isEdgeCalculated = new bool[12];
         int edgeIndex = 0;
-        
         for (int t = 0; t < 5; t++)
         {
             for (int v = 0; v < 3; v++)
             {
                 int triTableValue = MarchingTable.Triangles[configIndex, edgeIndex];
-                if (triTableValue == -1) 
-                    return;
+                if (triTableValue == -1) return;
 
-                if (!isEdgeCalculated[triTableValue])
+                Vector3Int edgeStart = position + MarchingTable.Edges[triTableValue, 0];
+                Vector3Int edgeEnd = position + MarchingTable.Edges[triTableValue, 1];
+                
+                Vector3 vertex = (edgeStart + edgeEnd) / 2;
+                if (isUseSmoothness)
                 {
-                    Vector3 edgeStart = position + MarchingTable.Edges[triTableValue, 0];
-                    Vector3 edgeEnd = position + MarchingTable.Edges[triTableValue, 1];
-                    Vector3 vertex = Vector3.Lerp(edgeStart, edgeEnd, 0.5f);
-                    edgeVertices[triTableValue] = vertex;
-                    isEdgeCalculated[triTableValue] = true;
+                    float edgeStartValue = heights[edgeStart.x, edgeStart.y, edgeStart.z];
+                    float edgeEndValue = heights[edgeEnd.x, edgeEnd.y, edgeEnd.z];
+                    vertex = InterpolateEdgePosition(heightThreshold, edgeStart, edgeStartValue, edgeEnd, edgeEndValue);
                 }
 
-                Vector3 currentVertex = edgeVertices[triTableValue];
-                vertices.Add(currentVertex);
-                normals.Add((currentVertex - sphereCenter).normalized);
-                uvs.Add(CalculateSphereUV(currentVertex));
-                triangles.Add(vertices.Count - 1);
+                int vertexIndex = GetVertexIndex(vertex);
+                triangles.Add(vertexIndex);
                 edgeIndex++;
             }
         }
     }
 
-
-    private Vector2 CalculateSphereUV(Vector3 vertex)
+    private int GetVertexIndex(Vector3 vertex)
     {
-        Vector3 dir = (vertex - sphereCenter).normalized;
-
-        float azimuth = Mathf.Atan2(dir.x, dir.z);
-        if (azimuth < 0) azimuth += 2 * Mathf.PI;
-        float u = azimuth / (2 * Mathf.PI);
-
-        float polar = Mathf.Acos(Mathf.Clamp(dir.y, -1f, 1f));
-        float v = polar / Mathf.PI;
-
-        return new Vector2(u, v);
+        long key = GetVertexKey(vertex);
+        if (vertexCache.TryGetValue(key, out int index)) return index;
+        index = vertices.Count;
+        vertices.Add(vertex);
+        vertexCache[key] = index;
+        return index;
     }
 
+    private long GetVertexKey(Vector3 vertex)
+    {
+        int x = Mathf.RoundToInt(vertex.x * 1000);
+        int y = Mathf.RoundToInt(vertex.y * 1000);
+        int z = Mathf.RoundToInt(vertex.z * 1000);
+        return (long)x << 40 | (long)y << 20 | z;
+    }
+
+    private Vector3 InterpolateEdgePosition(float threshold, Vector3 vertex1, float value1, Vector3 vertex2, float value2)
+    {
+        if (Mathf.Approximately(threshold - value1, 0)) return vertex1;
+        if (Mathf.Approximately(threshold - value2, 0)) return vertex2;
+        if (Mathf.Approximately(value1 - value2, 0)) return vertex1;
+
+        float mu = (threshold - value1) / (value2 - value1);
+        return new Vector3(
+            vertex1.x + mu * (vertex2.x - vertex1.x),
+            vertex1.y + mu * (vertex2.y - vertex1.y),
+            vertex1.z + mu * (vertex2.z - vertex1.z)
+        );
+    }
 
     private int GetConfigIndex(float[] cubeCorners)
     {
@@ -234,38 +295,28 @@ public class MarchingCubeToAnyShape : MonoBehaviour
         return configIndex;
     }
 
-
-    private void OnDrawGizmosSelected()
-    {
-        if (!visualizeNoise || !Application.isPlaying)
-            return;
-
-        // 可视化密度场
-        for (int x = 0; x < width + 1; x += 2)
-        {
-            for (int y = 0; y < height + 1; y += 2)
-            {
-                for (int z = 0; z < width + 1; z += 2)
-                {
-                    Gizmos.color = new Color(heights[x, y, z], heights[x, y, z], heights[x, y, z], 0.5f);
-                    Gizmos.DrawSphere(new Vector3(x, y, z), 0.3f);
-                }
-            }
-        }
-
-        // 可视化延伸点和延伸方向（辅助调试）
-        Gizmos.color = Color.red;
-        foreach (var data in extendData)
-        {
-            // 绘制点击点
-            Gizmos.DrawSphere(data.hitPoint, 0.5f);
-            // 绘制延伸方向线（摄像机方向）
-            Gizmos.DrawLine(data.hitPoint, data.hitPoint + data.camDirection * 3f);
-        }
-
-        // 可视化中心射线（摄像机中心点发出的射线）
-        Gizmos.color = Color.cyan;
-        Ray centerRay = Camera.main.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
-        Gizmos.DrawLine(centerRay.origin, centerRay.origin + centerRay.direction * 20f);
-    }
+    // private void OnDrawGizmosSelected()
+    // {
+    //     if (!visualizeNoise || !Application.isPlaying) return;
+    //
+    //     // 可视化标量场（原有逻辑）
+    //     for (int x = 0; x < width + 1; x++)
+    //     {
+    //         for (int y = 0; y < height + 1; y++)
+    //         {
+    //             for (int z = 0; z < width + 1; z++)
+    //             {
+    //                 Gizmos.color = new Color(heights[x, y, z], heights[x, y, z], heights[x, y, z], 1);
+    //                 Gizmos.DrawSphere(new Vector3(x * resolution, y * resolution, z * resolution), 0.2f * resolution);
+    //             }
+    //         }
+    //     }
+    //
+    //     // 可视化笔刷位置
+    //     if (brushWorldPos.HasValue)
+    //     {
+    //         Gizmos.color = Color.green;
+    //         Gizmos.DrawWireSphere(brushWorldPos.Value, brushRadius);
+    //     }
+    // }
 }
