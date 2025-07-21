@@ -28,6 +28,8 @@ public class MarchingCubeToAnyShape : MonoBehaviour
     private Vector3 brushGridPos;
 
     private float[,,] heights;
+    private float[,,] baseHeights;
+    
     private List<Vector3> vertices = new List<Vector3>();
     private List<int> triangles = new List<int>();
 
@@ -45,13 +47,54 @@ public class MarchingCubeToAnyShape : MonoBehaviour
         meshFilter = GetComponent<MeshFilter>();
         meshCollider = GetComponent<MeshCollider>();
         vertexCache = new Dictionary<long, int>();
+        
+        // 初始化基础标量场（仅生成一次原始噪声）
+        InitializeBaseHeights();
+        
         StartCoroutine(TestAll());
     }
 
+    // 新增：初始化基础标量场（仅执行一次）
+    private void InitializeBaseHeights()
+    {
+        baseHeights = new float[width + 1, height + 1, width + 1];
+    
+        // 生成原始噪声（和原来SetHeights的逻辑相同）
+        for (int x = 0; x < width + 1; x++)
+        {
+            for (int y = 0; y < height + 1; y++)
+            {
+                for (int z = 0; z < width + 1; z++)
+                {
+                    if (use3DNoise)
+                    {
+                        baseHeights[x, y, z] = PerlinNoise3D(
+                            (float)x / width * noiseScale, 
+                            (float)y / height * noiseScale, 
+                            (float)z / width * noiseScale
+                        );
+                    }
+                    else
+                    {
+                        float currentHeight = height * Mathf.PerlinNoise(x * noiseScale, z * noiseScale);
+                        float distToSufrace;
+                        if (y <= currentHeight - 0.5f) distToSufrace = 0f;
+                        else if (y > currentHeight + 0.5f) distToSufrace = 1f;
+                        else if (y > currentHeight) distToSufrace = y - currentHeight;
+                        else distToSufrace = currentHeight - y;
+                        baseHeights[x, y, z] = distToSufrace;
+                    }
+
+                    if (x == 0) baseHeights[x, y, z] = 0;
+                    else baseHeights[x, y, z] = 1;
+                }
+            }
+        }
+    }
     void Update()
     {
         // 检测鼠标点击并记录笔刷位置（仅在点击地形时生效）
-        if (Input.GetKeyDown(brushKey))
+        if (Input.GetKey(brushKey))
         {
             print("hit!");
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
@@ -69,6 +112,10 @@ public class MarchingCubeToAnyShape : MonoBehaviour
             SetHeights();
             MarchCubes();
             SetMesh();
+            
+            //保存当前帧的修改到基础标量场（用于下一帧）
+            baseHeights = (float[,,])heights.Clone();
+            
             yield return new WaitForSeconds(0.1f); // 缩短更新间隔，笔刷反馈更及时
         }
     }
@@ -110,7 +157,8 @@ public class MarchingCubeToAnyShape : MonoBehaviour
 
     private void SetHeights()
     {
-        heights = new float[width + 1, height + 1, width + 1];
+        // 1. 先复制基础标量场（包含历史笔刷修改）作为当前帧的初始值
+        heights = (float[,,])baseHeights.Clone(); // 关键：从历史状态开始，而非原始噪声
 
         // 计算笔刷影响范围（网格坐标，避免每帧重复计算）
         int brushGridRadius = 0;
@@ -130,63 +178,41 @@ public class MarchingCubeToAnyShape : MonoBehaviour
             hasBrush = true;
         }
 
-        // 生成原始噪声标量场
-        for (int x = 0; x < width + 1; x++)
+        if (hasBrush)
         {
-            for (int y = 0; y < height + 1; y++)
+            for (int x = 0; x < width + 1; x++)
             {
-                for (int z = 0; z < width + 1; z++)
+                for (int y = 0; y < height + 1; y++)
                 {
-                    // 原始噪声计算（保持不变）
-                    float originalValue;
-                    
-                    
-                    if (use3DNoise)
+                    for (int z = 0; z < width + 1; z++)
                     {
-                        originalValue = PerlinNoise3D(
-                            (float)x / width * noiseScale, 
-                            (float)y / height * noiseScale, 
-                            (float)z / width * noiseScale);
-                    }
-                    else
-                    {
-                        float currentHeight = height * Mathf.PerlinNoise(x * noiseScale, z * noiseScale);
-                        if (y <= currentHeight - 0.5f) originalValue = 0f;
-                        else if (y > currentHeight + 0.5f) originalValue = 1f;
-                        else if (y > currentHeight) originalValue = y - currentHeight;
-                        else originalValue = currentHeight - y;
-                    }
+                        // 计算当前网格点到笔刷中心的距离（网格坐标）
+                        float dx = x - brushGridPos.x;
+                        float dy = y - brushGridPos.y;
+                        float dz = z - brushGridPos.z;
+                        float gridDistance = Mathf.Sqrt(dx * dx + dy * dy + dz * dz);
 
-                    // 笔刷修改：仅在有点击且在影响范围内时生效
-                    if (hasBrush)
-                    {
-                         // 计算当前网格点到笔刷中心的网格距离
-                         float dx = x - brushGridPos.x;
-                         float dy = y - brushGridPos.y;
-                         float dz = z - brushGridPos.z;
-                         float gridDistance = Mathf.Sqrt(dx * dx + dy * dy + dz * dz);
-                        
-                         // 在笔刷范围内才修改
-                         if (gridDistance <= brushGridRadius)
-                         {
-                             // 平滑衰减（核心：避免硬边，用二次曲线+平滑过渡）
-                             float normalizedDist = gridDistance / brushGridRadius;
-                             float influence = 1 - normalizedDist * normalizedDist; // 二次衰减
-                             influence = Mathf.SmoothStep(0, 1, influence); // 边缘更平滑
-                        
-                             // 应用笔刷（基于原始噪声叠加）
-                             originalValue += brushStrength * influence;
-                             
-                             // 限制值在0-1之间（避免超出标量场合理范围）
-                             originalValue = Mathf.Clamp01(originalValue);
-                         }
-                    }
+                        // 在笔刷范围内则叠加新修改
+                        if (gridDistance <= brushGridRadius)
+                        {
+                            float normalizedDist = gridDistance / brushGridRadius;
+                            float influence = 1 - normalizedDist * normalizedDist;
+                            influence = Mathf.SmoothStep(0, 1, influence);
 
-                    // 最终标量值（原始噪声+笔刷修改）
-                    heights[x, y, z] = originalValue;
+                            // 关键：在历史状态（heights）上叠加新笔刷
+                            heights[x, y, z] += brushStrength * influence;
+                            heights[x, y, z] = Mathf.Clamp01(heights[x, y, z]);
+                        }
+                    }
                 }
             }
+
+            // 4. 处理完后清空当前笔刷（避免重复应用到下一帧）
+            brushWorldPos = null;
         }
+
+        // 最终：heights = 历史修改 + 新笔刷修改
+        
     }
 
     private float PerlinNoise3D(float x, float y, float z)
