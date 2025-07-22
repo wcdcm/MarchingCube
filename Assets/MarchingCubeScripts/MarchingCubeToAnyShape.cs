@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -5,10 +6,9 @@ using UnityEngine;
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 public class MarchingCubeToAnyShape : MonoBehaviour
 {
-     [SerializeField] private int width = 30;
+    [SerializeField] private int width = 30;
     [SerializeField] private int height = 30;
-
-    //float resolution = 0.1f;
+    
     [SerializeField] float noiseScale = 0.1f;
 
     [SerializeField] [Range(0,1f)]private float heightThreshold = 0.5f;
@@ -19,13 +19,14 @@ public class MarchingCubeToAnyShape : MonoBehaviour
     // 新增：笔刷参数
     [Header("笔刷设置")]
     [SerializeField] private float brushRadius = 2f; // 笔刷半径（世界单位）
-    [SerializeField] private float brushStrength = 0.4f; // 笔刷强度（正值凸起，负值凹陷）
+    [SerializeField] private float brushStrength = 0.4f; // 笔刷强度（负值凸起，正值凹陷）
     [SerializeField] private KeyCode brushKey = KeyCode.Mouse0; // 激活键（鼠标左键）
     [SerializeField] private LayerMask terrainLayer; // 地形检测层
 
     // 新增：记录笔刷点击位置（世界坐标）
-    [SerializeField] private Vector3? brushWorldPos;
+    private Vector3? brushWorldPos;
     private Vector3 brushGridPos;
+    private Material material;//用于改变笔刷刷到的地方的材质
 
     private float[,,] heights;
     private float[,,] baseHeights;
@@ -38,20 +39,28 @@ public class MarchingCubeToAnyShape : MonoBehaviour
 
     private MeshCollider meshCollider;
     private Mesh mesh;
+    private string meshName = "MarchingCube";
 
-    // [Header("Test:")] 
-    // public GameObject sphere;
-    // public Vector3 instancePos;
+    [Header("ShaderProperty")]
+    private int brushPosID;
+    private int brushRadiusID;
+
+    public float hightFactor = 0.1f;
+    
+    
     void Start()
-    {
+    { 
+        material = this.GetComponent<MeshRenderer>().material;
         meshFilter = GetComponent<MeshFilter>();
         meshCollider = GetComponent<MeshCollider>();
         vertexCache = new Dictionary<long, int>();
         
         // 初始化基础标量场（仅生成一次原始噪声）
         InitializeBaseHeights();
-        
         StartCoroutine(TestAll());
+
+        brushPosID = Shader.PropertyToID("_BrushPos");
+        brushRadiusID = Shader.PropertyToID("_BrushRadius");
     }
 
     // 新增：初始化基础标量场（仅执行一次）
@@ -85,7 +94,7 @@ public class MarchingCubeToAnyShape : MonoBehaviour
                         baseHeights[x, y, z] = distToSufrace;
                     }
 
-                    if (x == 0) baseHeights[x, y, z] = 0;
+                    if (y == 0 || x == 0) baseHeights[x, y, z] = 0;
                     else baseHeights[x, y, z] = 1;
                 }
             }
@@ -96,7 +105,6 @@ public class MarchingCubeToAnyShape : MonoBehaviour
         // 检测鼠标点击并记录笔刷位置（仅在点击地形时生效）
         if (Input.GetKey(brushKey))
         {
-            print("hit!");
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
             if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, terrainLayer))
             {
@@ -112,7 +120,6 @@ public class MarchingCubeToAnyShape : MonoBehaviour
             SetHeights();
             MarchCubes();
             SetMesh();
-            
             //保存当前帧的修改到基础标量场（用于下一帧）
             baseHeights = (float[,,])heights.Clone();
             
@@ -123,6 +130,8 @@ public class MarchingCubeToAnyShape : MonoBehaviour
     private void SetMesh()
     {
         mesh = new Mesh();
+        mesh.name = meshName;
+        
         mesh.vertices = vertices.ToArray();
         mesh.triangles = triangles.ToArray();
         vertexCache.Clear();
@@ -173,18 +182,49 @@ public class MarchingCubeToAnyShape : MonoBehaviour
                 brushWorldPos.Value.y,
                 brushWorldPos.Value.z
             );
-            
+            brushGridPos = this.transform.InverseTransformPoint(brushWorldPos.Value);
             brushGridRadius = Mathf.CeilToInt(brushRadius); // 网格半径
             hasBrush = true;
+            
+            //笔刷影响颜色
+            material.SetVector(brushPosID,brushGridPos);
+            material.SetFloat(brushRadiusID, brushRadius);
+            material.SetFloat("_Timer",Time.time);
         }
 
         if (hasBrush)
         {
-            for (int x = 0; x < width + 1; x++)
+            for (int x = 0; x < width; x++)
             {
-                for (int y = 0; y < height + 1; y++)
+                for (int y = 0; y < height * hightFactor; y++)//限制横向高度
                 {
-                    for (int z = 0; z < width + 1; z++)
+                    for (int z = 1; z < width; z++)
+                    {
+                        // 计算当前网格点到笔刷中心的距离（网格坐标）
+                        float dx = x - brushGridPos.x;
+                        float dy = y - brushGridPos.y;
+                        float dz = z - brushGridPos.z;
+                        float gridDistance = Mathf.Sqrt(dx * dx + dy * dy + dz * dz);
+
+                        // 在笔刷范围内则叠加新修改
+                        if (gridDistance <= brushGridRadius)
+                        {
+                            float normalizedDist = gridDistance / brushGridRadius;
+                            float influence = 1 - normalizedDist * normalizedDist;
+                            influence = Mathf.SmoothStep(0, 1, influence);
+
+                            // 关键：在历史状态（heights）上叠加新笔刷
+                            heights[x, y, z] += brushStrength * influence;
+                            heights[x, y, z] = Mathf.Clamp01(heights[x, y, z]);
+                        }
+                    }
+                }
+            }
+            for (int x = 0; x < width * hightFactor; x++)//限制竖向高度
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    for (int z = 1; z < width; z++)
                     {
                         // 计算当前网格点到笔刷中心的距离（网格坐标）
                         float dx = x - brushGridPos.x;
@@ -320,29 +360,4 @@ public class MarchingCubeToAnyShape : MonoBehaviour
         }
         return configIndex;
     }
-
-    // private void OnDrawGizmosSelected()
-    // {
-    //     if (!visualizeNoise || !Application.isPlaying) return;
-    //
-    //     // 可视化标量场（原有逻辑）
-    //     for (int x = 0; x < width + 1; x++)
-    //     {
-    //         for (int y = 0; y < height + 1; y++)
-    //         {
-    //             for (int z = 0; z < width + 1; z++)
-    //             {
-    //                 Gizmos.color = new Color(heights[x, y, z], heights[x, y, z], heights[x, y, z], 1);
-    //                 Gizmos.DrawSphere(new Vector3(x * resolution, y * resolution, z * resolution), 0.2f * resolution);
-    //             }
-    //         }
-    //     }
-    //
-    //     // 可视化笔刷位置
-    //     if (brushWorldPos.HasValue)
-    //     {
-    //         Gizmos.color = Color.green;
-    //         Gizmos.DrawWireSphere(brushWorldPos.Value, brushRadius);
-    //     }
-    // }
 }
