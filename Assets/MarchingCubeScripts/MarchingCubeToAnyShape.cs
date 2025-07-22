@@ -8,35 +8,36 @@ public class MarchingCubeToAnyShape : MonoBehaviour
 {
     [SerializeField] private int width = 30;
     [SerializeField] private int height = 30;
-    
-    [SerializeField] float noiseScale = 0.1f;
-
     [SerializeField] [Range(0,1f)]private float heightThreshold = 0.5f;
+    
+    //[SerializeField] float noiseScale = 0.1f;
+    //[SerializeField] bool visualizeNoise;
+    //[SerializeField] bool use3DNoise;
 
-    [SerializeField] bool visualizeNoise;
-    [SerializeField] bool use3DNoise;
-
+    
+    [Header("焊点间隔度：")][Range(0.1f,0.3f)]public float interval = 0.1f;
+    
     // 新增：笔刷参数
     [Header("笔刷设置")]
     [SerializeField] private float brushRadius = 2f; // 笔刷半径（世界单位）
     [SerializeField] private float brushStrength = 0.4f; // 笔刷强度（负值凸起，正值凹陷）
     [SerializeField] private KeyCode brushKey = KeyCode.Mouse0; // 激活键（鼠标左键）
     [SerializeField] private LayerMask terrainLayer; // 地形检测层
-
-    // 新增：记录笔刷点击位置（世界坐标）
+    // 记录笔刷点击位置（世界坐标）
     private Vector3? brushWorldPos;
     private Vector3 brushGridPos;
     private Material material;//用于改变笔刷刷到的地方的材质
 
+    [Header("标量场")]
     private float[,,] heights;
     private float[,,] baseHeights;
     
     private List<Vector3> vertices = new List<Vector3>();
     private List<int> triangles = new List<int>();
-
-    private MeshFilter meshFilter;
     private Dictionary<long, int> vertexCache;
-
+    
+    [Header("Mesh组件相关")]
+    private MeshFilter meshFilter;
     private MeshCollider meshCollider;
     private Mesh mesh;
     private string meshName = "MarchingCube";
@@ -75,25 +76,26 @@ public class MarchingCubeToAnyShape : MonoBehaviour
             {
                 for (int z = 0; z < width + 1; z++)
                 {
-                    if (use3DNoise)
-                    {
-                        baseHeights[x, y, z] = PerlinNoise3D(
-                            (float)x / width * noiseScale, 
-                            (float)y / height * noiseScale, 
-                            (float)z / width * noiseScale
-                        );
-                    }
-                    else
-                    {
-                        float currentHeight = height * Mathf.PerlinNoise(x * noiseScale, z * noiseScale);
-                        float distToSufrace;
-                        if (y <= currentHeight - 0.5f) distToSufrace = 0f;
-                        else if (y > currentHeight + 0.5f) distToSufrace = 1f;
-                        else if (y > currentHeight) distToSufrace = y - currentHeight;
-                        else distToSufrace = currentHeight - y;
-                        baseHeights[x, y, z] = distToSufrace;
-                    }
-
+                    #region PerlinNoise
+                    // if (use3DNoise)
+                    // {
+                    //     baseHeights[x, y, z] = PerlinNoise3D(
+                    //         (float)x / width * noiseScale, 
+                    //         (float)y / height * noiseScale, 
+                    //         (float)z / width * noiseScale
+                    //     );
+                    // }
+                    // else
+                    // {
+                    //     float currentHeight = height * Mathf.PerlinNoise(x * noiseScale, z * noiseScale);
+                    //     float distToSufrace;
+                    //     if (y <= currentHeight - 0.5f) distToSufrace = 0f;
+                    //     else if (y > currentHeight + 0.5f) distToSufrace = 1f;
+                    //     else if (y > currentHeight) distToSufrace = y - currentHeight;
+                    //     else distToSufrace = currentHeight - y;
+                    //     baseHeights[x, y, z] = distToSufrace;
+                    // }
+                    #endregion
                     if (y == 0 || x == 0) baseHeights[x, y, z] = 0;
                     else baseHeights[x, y, z] = 1;
                 }
@@ -123,7 +125,7 @@ public class MarchingCubeToAnyShape : MonoBehaviour
             //保存当前帧的修改到基础标量场（用于下一帧）
             baseHeights = (float[,,])heights.Clone();
             
-            yield return new WaitForSeconds(0.1f); // 缩短更新间隔，笔刷反馈更及时
+            yield return new WaitForSeconds(interval); // 缩短更新间隔，笔刷反馈更及时
         }
     }
 
@@ -250,9 +252,7 @@ public class MarchingCubeToAnyShape : MonoBehaviour
             // 4. 处理完后清空当前笔刷（避免重复应用到下一帧）
             brushWorldPos = null;
         }
-
         // 最终：heights = 历史修改 + 新笔刷修改
-        
     }
 
     private float PerlinNoise3D(float x, float y, float z)
