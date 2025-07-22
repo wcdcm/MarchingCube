@@ -1,11 +1,14 @@
-Shader "Custom/Triplanar-WeldingEff"
-{
-    Properties {
+Shader "Custom/Triplanar-WeldingEff" {
+Properties {
         _MainTint("MainTint",Color) = (1,1,1,1)
         _TopTex("TopTexture", 2D) = "white" {}
         _SideTex("SideTexture", 2D) = "white" {}
         _TopNormal("Top Normal Map", 2D) = "bump" {}
         _SideNormal("Side Normal Map", 2D) = "bump" {}
+        _DistortionMap("Distortion Map", 2D) = "bump" {} // 新增扰动贴图
+        _DistortionStrength("Distortion Strength", Range(0, 1)) = 0.5 // 扰动强度
+        _DistortionSpeed("Distortion Speed", Range(0, 5)) = 1.0 // 初始扰动速度
+        _MaskSizeMultiplier("Mask Size Multiplier", Range(1, 3)) = 1.5 // 遮罩大小乘数
         _Metallic("Metallic", Range(0,1)) = 0.81  // 高金属度
         _Smoothness("Smoothness", Range(0,1)) = 0.76  // 高光滑度
         _BlendOffset("BlendOffset",Range(0,0.5)) = 0.25
@@ -58,8 +61,13 @@ Pass {
             sampler2D _SideTex;
             sampler2D _TopNormal;
             sampler2D _SideNormal;
+            sampler2D _DistortionMap; // 新增扰动贴图
+            float _DistortionStrength; // 扰动强度
+            float _DistortionSpeed; // 初始扰动速度
+            float _MaskSizeMultiplier; // 遮罩大小乘数
             float4 _TopTex_ST, _SideTex_ST;
             float4 _TopNormal_ST, _SideNormal_ST;
+            float4 _DistortionMap_ST; // 新增扰动贴图ST
             fixed4 _MetalColor; // 金属基础色
 
            //笔刷控制
@@ -117,6 +125,26 @@ Pass {
             fixed4 frag(v2f i) : SV_Target
             {
                 TriUV triuv = GetTriUV(i.worldPos);
+                
+                // 计算笔刷遮罩
+                float dist = distance(i.worldPos, _BrushPos);
+                float maskRadius = _BrushRadius * _MaskSizeMultiplier; // 遮罩大小略大于笔刷半径
+                float brushMask = smoothstep(maskRadius, maskRadius * 0.8, dist); // 创建平滑遮罩
+                
+                // 计算扰动随时间的变化 (随时间流逝越来越慢)
+                float elapsed = _Time.y - _Timer;
+                float fade = saturate(1.0 - elapsed/_FadeTime);
+                float timeFactor = _Time.y * _DistortionSpeed * fade; // 扰动速度随时间减慢
+                
+                // 扰动UV坐标
+                float2 distortionUV = i.worldPos.xz * _DistortionMap_ST.xy + _DistortionMap_ST.zw;
+                float2 distortion = tex2D(_DistortionMap, distortionUV + float2(timeFactor, 0)).xy * 2 - 1;
+                distortion *= _DistortionStrength * fade * brushMask; // 应用遮罩和衰减
+                
+                // 应用扰动到UV
+                triuv.xUV += distortion;
+                triuv.yUV += distortion;
+                triuv.zUV += distortion;
                 
                 // 颜色采样
                 fixed4 colx = tex2D(_SideTex, triuv.xUV * _SideTex_ST.xy + _SideTex_ST.zw);
@@ -198,12 +226,8 @@ Pass {
                 // 最终颜色
                 fixed3 finalColor = diffuse + specular + ambient + envSpecular;
 
-                //笔刷设置
-                float dist = distance(i.worldPos, _BrushPos);
+                // 笔刷效果
                 float brushEffect = smoothstep(_BrushRadius, _BrushRadius * 0.5, dist);
-
-                float elapsed = _Time.y - _Timer;
-                float fade = saturate(1.0 - elapsed/_FadeTime);
                 finalColor.rgb = lerp(finalColor.rgb, _BrushColor.rgb, brushEffect * fade);
 
                 return fixed4(finalColor, 1.0);
