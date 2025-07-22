@@ -1,5 +1,6 @@
 Shader "Custom/Triplanar" {
 Properties {
+        _MainTint("MainTint",Color) = (1,1,1,1)
         _TopTex("TopTexture", 2D) = "white" {}
         _SideTex("SideTexture", 2D) = "white" {}
         _TopNormal("Top Normal Map", 2D) = "bump" {}
@@ -8,6 +9,12 @@ Properties {
         _Smoothness("Smoothness", Range(0,1)) = 0.5
         _BlendOffset("BlendOffset",Range(0,0.5)) = 0.25
         _BlendExponent ("Blend Exponent", Range(1, 8)) = 2
+    
+        //从脚本里面实时传参    
+        _BrushPos("Brush Position", Vector) = (0,0,0,0)
+        _BrushRadius("Brush Radius", Float) = 1.0
+        _BrushColor("Brush Color", Color) = (1,1,1,1)
+        _FadeTime("FadeTime",Float) = 3.0
 }
 SubShader {
         Tags { "RenderType"="Opaque" }
@@ -25,6 +32,7 @@ Pass {
                 float4 vertex : POSITION;
                 float3 normal : NORMAL;
                 float4 tangent : TANGENT;
+                fixed4 color : COLOR; // 添加顶点色输入
             };
             
             struct v2f
@@ -34,9 +42,11 @@ Pass {
                 float3 tangentWS : TEXCOORD1;
                 float3 bitangentWS : TEXCOORD2;
                 float4 worldPos : TEXCOORD3;
-                LIGHTING_COORDS(4,5)
+                fixed4 color : TEXCOORD4; // 添加顶点色插值寄存器
+                LIGHTING_COORDS(5,6)
             };
 
+            fixed4 _MainTint;
             fixed _BlendOffset;
             half _BlendExponent;
             half _Metallic;
@@ -47,6 +57,14 @@ Pass {
             sampler2D _SideNormal;
             float4 _TopTex_ST, _SideTex_ST;
             float4 _TopNormal_ST, _SideNormal_ST;
+
+           //笔刷控制
+            fixed4 _BrushPos;
+            fixed _BrushRadius;
+            fixed4 _BrushColor;
+            float _FadeTime;
+
+            float _Timer;
 
             struct TriUV{
                 float2 xUV, yUV, zUV;
@@ -79,6 +97,8 @@ Pass {
                 
                 o.bitangentWS = cross(o.normalWS, tangentWS.xyz) * tangentWS.w;
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex);
+                
+                o.color = v.color; // 传递顶点色到片元着色器
                 
                 TRANSFER_VERTEX_TO_FRAGMENT(o);
                 
@@ -145,8 +165,18 @@ Pass {
                 
                 // 最终颜色
                 fixed3 finalColor = diffuse + specular + ambient;
-                
-                return fixed4(finalColor, 1.0);
+
+                //笔刷设置
+                float dist = distance(i.worldPos, _BrushPos);
+                float brushEffect = smoothstep(_BrushRadius, _BrushRadius * 0.5, dist);
+                //finalColor.rgb = lerp(finalColor.rgb, _BrushColor.rgb, brushEffect);
+
+                float elapsed = _Time.y - _Timer;
+                float fade = saturate(1.0 - elapsed/_FadeTime);
+                finalColor.rgb = lerp(finalColor.rgb, _BrushColor.rgb, brushEffect * fade);
+
+                // 乘以主色调
+                return fixed4(finalColor, 1.0) * _MainTint;
             }
             ENDCG
         }
