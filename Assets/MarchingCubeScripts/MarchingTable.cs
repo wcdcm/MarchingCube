@@ -33,23 +33,40 @@ public static class MarchingTable
 
 	};
 
-	public static Vector3[,] Edges = new Vector3[12, 2] {
+	// public static Vector3[,] Edges = new Vector3[12, 2] {
+	//
+	// 	{ new Vector3(0.0f, 0.0f, 0.0f), new Vector3(1.0f, 0.0f, 0.0f) },
+	// 	{ new Vector3(1.0f, 0.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f) },
+	// 	{ new Vector3(0.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f) },
+	// 	{ new Vector3(0.0f, 0.0f, 0.0f), new Vector3(0.0f, 1.0f, 0.0f) },
+	// 	{ new Vector3(0.0f, 0.0f, 1.0f), new Vector3(1.0f, 0.0f, 1.0f) },
+	// 	{ new Vector3(1.0f, 0.0f, 1.0f), new Vector3(1.0f, 1.0f, 1.0f) },
+	// 	{ new Vector3(0.0f, 1.0f, 1.0f), new Vector3(1.0f, 1.0f, 1.0f) },
+	// 	{ new Vector3(0.0f, 0.0f, 1.0f), new Vector3(0.0f, 1.0f, 1.0f) },
+	// 	{ new Vector3(0.0f, 0.0f, 0.0f), new Vector3(0.0f, 0.0f, 1.0f) },
+	// 	{ new Vector3(1.0f, 0.0f, 0.0f), new Vector3(1.0f, 0.0f, 1.0f) },
+	// 	{ new Vector3(1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 1.0f) },
+	// 	{ new Vector3(0.0f, 1.0f, 0.0f), new Vector3(0.0f, 1.0f, 1.0f) }
+	//
+	// };
 
-		{ new Vector3(0.0f, 0.0f, 0.0f), new Vector3(1.0f, 0.0f, 0.0f) },
-		{ new Vector3(1.0f, 0.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f) },
-		{ new Vector3(0.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 0.0f) },
-		{ new Vector3(0.0f, 0.0f, 0.0f), new Vector3(0.0f, 1.0f, 0.0f) },
-		{ new Vector3(0.0f, 0.0f, 1.0f), new Vector3(1.0f, 0.0f, 1.0f) },
-		{ new Vector3(1.0f, 0.0f, 1.0f), new Vector3(1.0f, 1.0f, 1.0f) },
-		{ new Vector3(0.0f, 1.0f, 1.0f), new Vector3(1.0f, 1.0f, 1.0f) },
-		{ new Vector3(0.0f, 0.0f, 1.0f), new Vector3(0.0f, 1.0f, 1.0f) },
-		{ new Vector3(0.0f, 0.0f, 0.0f), new Vector3(0.0f, 0.0f, 1.0f) },
-		{ new Vector3(1.0f, 0.0f, 0.0f), new Vector3(1.0f, 0.0f, 1.0f) },
-		{ new Vector3(1.0f, 1.0f, 0.0f), new Vector3(1.0f, 1.0f, 1.0f) },
-		{ new Vector3(0.0f, 1.0f, 0.0f), new Vector3(0.0f, 1.0f, 1.0f) }
+	public static Vector3Int[,] Edges = new Vector3Int[12, 2] {
+
+		{ new Vector3Int(0, 0, 0), new Vector3Int(1, 0, 0) },
+		{ new Vector3Int(1, 0, 0), new Vector3Int(1, 1, 0) },
+		{ new Vector3Int(0, 1, 0), new Vector3Int(1, 1, 0) },
+		{ new Vector3Int(0, 0, 0), new Vector3Int(0, 1, 0) },
+		{ new Vector3Int(0, 0, 1), new Vector3Int(1, 0, 1) },
+		{ new Vector3Int(1, 0, 1), new Vector3Int(1, 1, 1) },
+		{ new Vector3Int(0, 1, 1), new Vector3Int(1, 1, 1) },
+		{ new Vector3Int(0, 0, 1), new Vector3Int(0, 1, 1) },
+		{ new Vector3Int(0, 0, 0), new Vector3Int(0, 0, 1) },
+		{ new Vector3Int(1, 0, 0), new Vector3Int(1, 0, 1) },
+		{ new Vector3Int(1, 1, 0), new Vector3Int(1, 1, 1) },
+		{ new Vector3Int(0, 1, 0), new Vector3Int(0, 1, 1) }
 
 	};
-
+	
 	//EdgeTable(边表),256行代表256种可能。每行数字表示三角形（三角形的组合）的顶点位于第几条边上（根据边的索引）。
 	public static int[,] Triangles = new int[,] {
 
