@@ -22,6 +22,7 @@ Properties {
     
         _MetalColor("Metal Base Color", Color) = (0.97, 0.97, 0.98, 1) // 银色基础色
 }
+
 SubShader {
         Tags { "RenderType"="Opaque" }
         Cull Off

@@ -31,7 +31,7 @@ public class MyMarchingCubes : MonoBehaviour
     void Start()
     {
         // 初始化球心（确保在网格范围内）
-        sphereCenter = new Vector3(sphereRadius, sphereRadius, sphereRadius);
+        sphereCenter = new Vector3(width/2.0f, height/2.0f, width/2.0f);
         meshFilter = GetComponent<MeshFilter>();
         meshRenderer = GetComponent<MeshRenderer>();
         

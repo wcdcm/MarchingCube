@@ -27,6 +27,7 @@ Properties {
     // 新增：高光范围控制参数
     _SpecularSize("Specular Size", Range(0.1, 5)) = 1.0  // 高光范围控制
 }
+
 SubShader {
     Tags { "RenderType"="Opaque" "Queue"="Geometry" }
     Cull Off

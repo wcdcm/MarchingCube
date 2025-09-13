@@ -96,9 +96,9 @@ public class MarchingCubes1 : MonoBehaviour
                     Vector3 point = new Vector3(x, y, z);
                     float distSqr = (point - center).sqrMagnitude;
 
-                    //heights[x, y, z] = distSqr < radiusSqr ? 0f : 1f;
-                    // if (x == 0 && y == 0 && z == 0) heights[x, y, z] = 0f;
-                    // else heights[x, y, z] = 1f;
+                        //heights[x, y, z] = distSqr < radiusSqr ? 0f : 1f;
+                        // if (x == 0 && y == 0 && z == 0) heights[x, y, z] = 0f;
+                        // else heights[x, y, z] = 1f;
                     if (y == 1) heights[x, y, z] = 0f;
                     else heights[x, y, z] = 1f;
                 }
